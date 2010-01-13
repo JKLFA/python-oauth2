@@ -30,6 +30,11 @@ import hmac
 import binascii
 import httplib2
 
+try:
+    from urlparse import parse_qs, parse_qsl
+except ImportError:
+    from cgi import parse_qs, parse_qsl
+
 
 VERSION = '1.0' # Hi Blaine!
 HTTP_METHOD = 'GET'
@@ -192,7 +197,7 @@ class Token(object):
         if not len(s):
             raise ValueError("Invalid parameter string.")
 
-        params = urlparse.parse_qs(s, keep_blank_values=False)
+        params = parse_qs(s, keep_blank_values=False)
         if not len(params):
             raise ValueError("Invalid parameter string.")
 
@@ -320,7 +325,12 @@ class Request(dict):
     def get_normalized_parameters(self):
         """Return a string that contains the parameters that must be signed."""
         items = [(k, v) for k, v in self.items() if k != 'oauth_signature']
-        return urllib.urlencode(sorted(items))
+        encoded_str = urllib.urlencode(sorted(items))
+        # Encode signature parameters per Oauth Core 1.0 protocol
+        # spec draft 7, section 3.6
+        # (http://tools.ietf.org/html/draft-hammer-oauth-07#section-3.6)
+        # Spaces must be encoded with "%20" instead of "+"
+        return encoded_str.replace('+', '%20')
  
     def sign_request(self, signature_method, consumer, token):
         """Set the signature parameter to the result of sign."""
@@ -435,7 +445,7 @@ class Request(dict):
     @staticmethod
     def _split_url_string(param_str):
         """Turn URL string into parameters."""
-        parameters = urlparse.parse_qs(param_str, keep_blank_values=False)
+        parameters = parse_qs(param_str, keep_blank_values=False)
         for k, v in parameters.iteritems():
             parameters[k] = urllib.unquote(v[0])
         return parameters
@@ -567,10 +577,10 @@ class Client(httplib2.Http):
             headers = {}
 
         if body and method == "POST":
-            parameters = dict(urlparse.parse_qsl(body))
+            parameters = dict(parse_qsl(body))
         elif method == "GET":
             parsed = urlparse.urlparse(uri)
-            parameters = urlparse.parse_qs(parsed.query)     
+            parameters = parse_qs(parsed.query)     
         else:
             parameters = None
 
