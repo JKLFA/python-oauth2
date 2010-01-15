@@ -309,11 +309,14 @@ class Request(dict):
  
     def to_postdata(self):
         """Serialize as post data for a POST request."""
+        return self.encode_postdata(self)
+
+    def encode_postdata(self, data):
         # tell urlencode to deal with sequence values and map them correctly
         # to resulting querystring. for example self["k"] = ["v1", "v2"] will
         # result in 'k=v1&k=v2' and not k=%5B%27v1%27%2C+%27v2%27%5D
-        return urllib.urlencode(self, True)
- 
+        return urllib.urlencode(data, True)
+
     def to_url(self):
         """Serialize as a URL for a GET request."""
         return '%s?%s' % (self.url, self.to_postdata())
@@ -574,7 +577,8 @@ class Client(httplib2.Http):
         self.method = method
 
     def request(self, uri, method="GET", body=None, headers=None, 
-        redirections=httplib2.DEFAULT_MAX_REDIRECTS, connection_type=None):
+        redirections=httplib2.DEFAULT_MAX_REDIRECTS, connection_type=None,
+        force_auth_header=False):
         
         if not isinstance(headers, dict):
             headers = {}
@@ -592,13 +596,23 @@ class Client(httplib2.Http):
 
         req.sign_request(self.method, self.consumer, self.token)
 
+        if force_auth_header:
+            # ensure we always send Authorization
+            headers.update(req.to_header())
+
         if method == "POST":
-            body = req.to_postdata() 
+            if not force_auth_header:
+                body = req.to_postdata()
+            else:
+                body = req.encode_postdata(req.get_nonoauth_parameters())
             headers['Content-Type'] = 'application/x-www-form-urlencoded'
         elif method == "GET":
-            uri = req.to_url()
+            if not force_auth_header:
+                uri = req.to_url()
         else:
-            headers.update(req.to_header())
+            if not force_auth_header:
+                # don't call update twice.
+                headers.update(req.to_header())
 
         return httplib2.Http.request(self, uri, method=method, body=body, 
             headers=headers, redirections=redirections, 
